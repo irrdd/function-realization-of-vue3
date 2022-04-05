@@ -1,7 +1,7 @@
 /*
  * @Author: 王东旭
  * @Date: 2022-03-28 10:58:41
- * @LastEditTime: 2022-04-05 18:11:46
+ * @LastEditTime: 2022-04-05 19:07:34
  * @LastEditors: 王东旭
  * @Description: 比较完善的响应系统，vue设计与实现第四章4.3
  * @FilePath: \function-realization-of-vue3\src\reactive\4.3比较完善的响应系统.js
@@ -58,7 +58,7 @@ const effectStack = [];
 const data = {
   foo: 1,
 };
-/******* 
+/*******
  * @description: 在get拦截函数内调用此函数追踪变化
  * @param {*} target 被代理的对象
  * @param {*} key 被代理的对象的属性
@@ -77,7 +77,7 @@ function track(target, key) {
   // ? 将当前的activeEffect添加到当前的deps中,用于清除
   activeEffect.deps.push(deps);
 }
-/******* 
+/*******
  * @description: 在set中拦截函数内调用此函数触发变化
  * @param {Object} target 被代理的对象
  * @param {string} key 被代理的对象的属性
@@ -96,7 +96,15 @@ function trigger(target, key) {
         effectsToRun.add(effectFn);
       }
     });
-  effectsToRun.forEach((fn) => fn());
+  // ? 如果存在调度器，则调用该调度器，并将副作用函数作为参数传递
+  // todo 调度器的思想很重要，需要深入研究，可以将副作用函数的控制权交给用户
+  effectsToRun.forEach((effectFn) => {
+    if (effectFn.options.scheduler) {
+      effectFn.options.scheduler(effectFn);
+    } else {
+      effectFn();
+    }
+  });
 }
 // ? 实现代理
 const obj = new Proxy(data, {
@@ -125,9 +133,10 @@ function cleanup(effectFn) {
 /**
  * @description: 注册副作用函数
  * @param {Function} fn 副作用函数
+ * @param {Object} options 用于允许用户指定调度器
  * @return null
  */
-function effect(fn) {
+function effect(fn, options = {}) {
   const effectFn = () => {
     cleanup(effectFn);
     activeEffect = effectFn;
@@ -139,15 +148,14 @@ function effect(fn) {
     // 将activeEffect指向下一个要执行的副作用函数
     activeEffect = effectStack[effectStack.length - 1];
   };
+  // ! 将options挂载到对应的副作用函数上
+  effectFn.options = options;
   // 加入依赖容器
   effectFn.deps = [];
   effectFn();
 }
 
-effect(() => 
-  obj.foo++
-);
-
+// todo 嵌套effect
 // 必须先执行effect，才能将副作用函数写到桶中
 // effect(() => {
 //    console.log('effect1执行');
@@ -158,21 +166,49 @@ effect(() =>
 //    console.log(obj.foo);
 // });
 
-// setTimeout(() => {
-//     obj.foo = false;
-//     console.log(obj.foo);
-// }, 1000);
-// setTimeout(() => {
-//     obj.text = "hello vue3";
-//     console.log(bucket);
+// todo 副作用函数的调度器
+// effect(() => {
+//   console.log(obj.foo)
+// },
+// {
+//   scheduler:(fn)=>{
+//     setTimeout(fn)
+//   }
+// }
+// );
+// obj.foo++
+// obj.foo++
+// console.log('结束了');
 
-// }, 1000);
-// setTimeout(() => {
-//     // obj.age = 40;
-//     obj.ok = false;
-//     console.log(bucket);
-// }, 2000);
-// setTimeout(() => {
-//     // obj.age = 40;
-//     obj.text = "hello vue3.0";
-// }, 3000);
+// todo 利用调度器实现隐藏过渡状态
+// 定义任务队列,使用Set去重
+const jobQueue = new Set();
+//! 利用promise的特性，把要执行的任务放到微任务队列中，当所有副作用函数在同步任务结束后执行，以便略过中间态，直接执行最终状态
+const p = Promise.resolve();
+// 表示是否执行队列中的任务
+let isFlushing = false;
+//! 执行队列中的任务，并且在一个函数执行周期内只执行一次
+function flushJob() {
+  if (isFlushing) return;
+
+  isFlushing = true;
+  p.then(() => {
+    jobQueue.forEach((job) => job());
+  }).finally(() => {
+    isFlushing = false;
+  });
+}
+
+effect(
+  () => {
+    console.log(obj.foo);
+  },
+  {
+    scheduler: (fn) => {
+      jobQueue.add(fn);
+      flushJob();
+    },
+  }
+);
+obj.foo++;
+obj.foo++;
