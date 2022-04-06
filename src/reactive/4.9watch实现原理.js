@@ -1,13 +1,12 @@
 /*
  * @Author: 王东旭
- * @Date: 2022-04-05 22:34:32
- * @LastEditTime: 2022-04-06 11:33:12
+ * @Date: 2022-04-06 11:40:50
+ * @LastEditTime: 2022-04-06 21:31:56
  * @LastEditors: 王东旭
- * @Description: 4.8计算属性computed和lazy
- * @FilePath: \function-realization-of-vue3\src\reactive\4.8计算属性computed和lazy.js
- *
+ * @Description: watch实现原理
+ * @FilePath: \function-realization-of-vue3\src\reactive\4.9watch实现原理.js
+ * @
  */
-
 // ?直接用Set作为桶的数据结构，则没有副作用函数与被操作的目标字段之间建立明确的联系，导致不相干的字段改变也会触发副作用函数
 // const bucket = new Set()
 
@@ -188,17 +187,84 @@ function computed(getter) {
   return obj;
 }
 
-// todo 实现computed
-const sumRes = computed(() => {
-  console.log("执行副作用函数");
-  return obj.foo + obj.bar;
-});
-// console.log(sumRes.value);
-// obj.foo = 3;
-// console.log(sumRes.value);
-// console.log(sumRes.value);
-effect(() => {
-  console.log(sumRes.value);
-});
-obj.foo = 3;
-// obj.foo = 4;
+// todo 实现watch
+/*******
+ * @description:
+ * @param {*}
+ * @return {*}
+ */
+function traverse(value, seen = new Set()) {
+  if (typeof value !== "object" || value === null || seen.has(value)) return;
+  seen.add(value);
+  for (const key in value) {
+    traverse(value[key], seen);
+  }
+  return value;
+}
+
+/*******
+ * @description: watch
+ * @param {Object | Function} source 被观察的对象或者getter函数
+ * @param {Function} cb 观察对象值变化后触发的回调函数
+ * @return {viod} viod
+ */
+function watch(source, cb, options = {}) {
+  let getter;
+  if (typeof source === "function") {
+    getter = source;
+  } else {
+    getter = () => traverse(source);
+  }
+  // 定义新值和旧值
+  let oldValue, newValue;
+  // 用来储存用户注册的过期回调
+  let cleanup
+  function onInvalidate(fn){
+    cleanup = fn
+  }
+  const job = () => {
+    // ?数据改变后执行调度器获取新值
+    newValue = effectFn();
+    // 在调用回调前，先调用过期回调
+    cleanup && cleanup()
+    cb(newValue, oldValue,onInvalidate);
+    // 更新旧值
+    oldValue = JSON.parse(JSON.stringify(newValue));
+  };
+  const effectFn = effect(() => getter(), {
+    lazy: true,
+    scheduler: ()=>{
+      if (options.flush === 'post') {
+        const p = Promise.resolve();
+        p.then(job);
+      }else{
+        job()
+      }
+    },
+  });
+  // ?手动调用，拿到旧值
+  if (options.immediate) {
+    job();
+  } else {
+    oldValue = effectFn();
+  }
+}
+
+watch(
+  obj,
+  (newValue, oldValue,onInvalidate) => {
+    console.log(newValue, oldValue);
+    console.log("数据变化");
+    onInvalidate(()=>{
+      expired = true
+    })
+  },
+  {
+    immediate: false,
+    flush: 'post',
+  }
+);
+
+obj.bar++;
+obj.foo++;
+console.log('更改数据');
