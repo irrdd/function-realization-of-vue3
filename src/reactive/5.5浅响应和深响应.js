@@ -1,10 +1,10 @@
 /*
  * @Author: 王东旭
- * @Date: 2022-04-07 13:20:40
- * @LastEditTime: 2022-04-17 22:16:53
+ * @Date: 2022-04-17 22:17:28
+ * @LastEditTime: 2022-04-17 22:32:13
  * @LastEditors: 王东旭
  * @Description:
- * @FilePath: \function-realization-of-vue3\src\reactive\5.1reactive.js
+ * @FilePath: \function-realization-of-vue3\src\reactive\5.5浅响应和深响应.js
  * @
  */
 // ?直接用Set作为桶的数据结构，则没有副作用函数与被操作的目标字段之间建立明确的联系，导致不相干的字段改变也会触发副作用函数
@@ -114,9 +114,10 @@ const ITERATE_KEY = Symbol("KEY");
 /*******
  * @description: 实现代理
  * @param {Object} target 被代理的数据
+ * @param {Boolean} isShallow 是否为浅响应，默认为false，即非浅响应
  * @return {Proxy} Proxy 代理数据
  */
-function reactive(target) {
+function createReactive(target,isShallow = false) {
   return new Proxy(target, {
     get(target, key, receiver) {
       // console.log(receiver);
@@ -125,7 +126,16 @@ function reactive(target) {
         return target;
       }
       track(target, key);
-      return Reflect.get(target, key, receiver);
+      const res = Reflect.get(target, key, receiver);
+      if (isShallow) {
+          return res
+      }
+      // ! 如果是对象，则递归代理
+      if (typeof res === "object" && res !== null) {
+        // ? 调用reactive方法，将结果包装成Proxy返回
+        return reactive(res);
+      }
+      return res;
     },
     set(target, key, newValue, receiver) {
       const oldValue = Reflect.get(target, key, receiver);
@@ -167,6 +177,22 @@ function reactive(target) {
       return res;
     },
   });
+}
+/******* 
+ * @description: 
+ * @param {*}
+ * @return {*}
+ */
+function reactive(target) {
+    return createReactive(target);
+}
+/******* 
+ * @description: 
+ * @param {*}
+ * @return {*}
+ */
+function shallowReactive(target) {
+    return createReactive(target, true);
 }
 
 /**
@@ -212,31 +238,12 @@ function effect(fn, options = {}) {
   }
   return effectFn;
 }
-// todo 测试关键字‘in’
-// effect(() => {
-//   console.log("foo" in obj);
-// });
-
-// obj.foo++;
-// todo 测试for...in
-// effect(() => {
-//   console.log(8, obj.foo);
-// });
-// obj.bar = 3;
-// obj.foo =10
-// obj.aa =1
-// delete obj.foo;
-// todo 测试reactive
-const obj = {};
-const proto = {
-  foo: 1,
-  bar: 2,
-};
-const child = reactive(obj);
-const parent = reactive(proto);
-Object.setPrototypeOf(child, parent);
-effect(() => {
-  console.log(child.foo);
+const obj = shallowReactive({
+  foo: {
+    bar: 1,
+  },
 });
-child.foo = 3;
-console.log(child.raw === obj);
+effect(() => {
+  console.log(obj.foo.bar);
+});
+obj.foo.bar = 2;
