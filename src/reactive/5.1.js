@@ -1,5 +1,14 @@
 /*
  * @Author: 王东旭
+ * @Date: 2022-04-07 13:20:40
+ * @LastEditTime: 2022-04-07 13:16:57
+ * @LastEditors: 王东旭
+ * @Description: 
+ * @FilePath: \function-realization-of-vue3\src\reactive\5.1.js
+ * @ 
+ */
+/*
+ * @Author: 王东旭
  * @Date: 2022-04-06 11:40:50
  * @LastEditTime: 2022-04-07 13:19:55
  * @LastEditors: 王东旭
@@ -99,9 +108,15 @@ function trigger(target, key) {
 }
 // ? 实现代理
 const obj = new Proxy(data, {
-  get(target, key) {
+  get(target, key,receiver) {
+    console.log(receiver);
     track(target, key);
-    return target[key];
+    return Reflect.get(target, key, receiver);
+  },
+  has(target, key){
+    track(target, key);
+    console.log(target, key);
+    return Reflect.has(target, key);
   },
   set(target, key, newValue) {
     target[key] = newValue;
@@ -151,120 +166,9 @@ function effect(fn, options = {}) {
   }
   return effectFn;
 }
-/*******
- * @description: 计算属性
- * @param {Function} getter 副作用函数
- * @return {Object} obj
- */
-function computed(getter) {
-  let value;
-  let dirty = true;
 
-  const effectFn = effect(getter, {
-    lazy: true,
-    scheduler() {
-      if (!dirty) {
-        dirty = true;
-        // ! 当计算属性依赖的响应式数据变化时，手动调用trigger触发响应
-        trigger(obj, "value");
-      }
-    },
-  });
+effect(() => {
+  console.log('foo' in obj);
+})
 
-  const obj = {
-    //! 只有读取值才会调用effectFn进行计算
-    get value() {
-      // ?只有“脏”数据才计算值，否则使用缓存value
-      if (dirty) {
-        value = effectFn();
-        dirty = false;
-      }
-      //! 当读取value时，手动调用track进行跟踪
-      track(obj, "value");
-      return value;
-    },
-  };
-  return obj;
-}
-
-// todo 实现watch
-/*******
- * @description:
- * @param {*}
- * @return {*}
- */
-function traverse(value, seen = new Set()) {
-  if (typeof value !== "object" || value === null || seen.has(value)) return;
-  seen.add(value);
-  for (const key in value) {
-    traverse(value[key], seen);
-  }
-  return value;
-}
-
-/*******
- * @description: watch
- * @param {Object | Function} source 被观察的对象或者getter函数
- * @param {Function} cb 观察对象值变化后触发的回调函数
- * @return {viod} viod
- */
-function watch(source, cb, options = {}) {
-  let getter;
-  if (typeof source === "function") {
-    getter = source;
-  } else {
-    getter = () => traverse(source);
-  }
-  // 定义新值和旧值
-  let oldValue, newValue;
-  // 用来储存用户注册的过期回调
-  let cleanup
-  function onInvalidate(fn){
-    cleanup = fn
-  }
-  const job = () => {
-    // ?数据改变后执行调度器获取新值
-    newValue = effectFn();
-    // 在调用回调前，先调用过期回调
-    cleanup && cleanup()
-    cb(newValue, oldValue,onInvalidate);
-    // 更新旧值
-    oldValue = JSON.parse(JSON.stringify(newValue));
-  };
-  const effectFn = effect(() => getter(), {
-    lazy: true,
-    scheduler: ()=>{
-      if (options.flush === 'post') {
-        const p = Promise.resolve();
-        p.then(job);
-      }else{
-        job()
-      }
-    },
-  });
-  // ?手动调用，拿到旧值
-  if (options.immediate) {
-    job();
-  } else {
-    oldValue = effectFn();  
-  }
-}
-
-watch(
-  obj,
-  (newValue, oldValue,onInvalidate) => {
-    console.log(newValue, oldValue);
-    console.log("数据变化");
-    onInvalidate(()=>{
-      expired = true
-    })
-  },
-  {
-    immediate: false,
-    flush: 'post',
-  }
-);
-
-obj.bar++;
-obj.foo++;
-console.log('更改数据');
+obj.foo++
