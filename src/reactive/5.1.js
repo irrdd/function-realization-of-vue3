@@ -1,19 +1,10 @@
 /*
  * @Author: 王东旭
  * @Date: 2022-04-07 13:20:40
- * @LastEditTime: 2022-04-07 13:16:57
+ * @LastEditTime: 2022-04-17 22:10:55
  * @LastEditors: 王东旭
- * @Description: 
+ * @Description:
  * @FilePath: \function-realization-of-vue3\src\reactive\5.1.js
- * @ 
- */
-/*
- * @Author: 王东旭
- * @Date: 2022-04-06 11:40:50
- * @LastEditTime: 2022-04-07 13:19:55
- * @LastEditors: 王东旭
- * @Description: watch实现原理
- * @FilePath: \function-realization-of-vue3\src\reactive\4.9watch实现原理.js
  * @
  */
 // ?直接用Set作为桶的数据结构，则没有副作用函数与被操作的目标字段之间建立明确的联系，导致不相干的字段改变也会触发副作用函数
@@ -21,7 +12,6 @@
 
 //! 重新设计桶的数据结构
 // 采用WeakMap,当数据没有被引用时，就会被垃圾回收机制回收
-const bucket = new WeakMap();
 /**
  * bucket的数据结构
  * WeakMap:{
@@ -49,15 +39,11 @@ const bucket = new WeakMap();
  *
  * }
  */
+const bucket = new WeakMap();
 // 全局变量，注册副作用函数
 let activeEffect;
 // effect 栈
 const effectStack = [];
-
-const data = {
-  foo: 1,
-  bar: 2,
-};
 /*******
  * @description: 在get拦截函数内调用此函数追踪变化
  * @param {*} target 被代理的对象
@@ -83,12 +69,14 @@ function track(target, key) {
  * @param {string} key 被代理的对象的属性
  * @return {*} null
  */
-function trigger(target, key) {
+function trigger(target, key, type) {
   const depsMap = bucket.get(target);
   //! 如果没有可执行的map，则不需要触发
   if (!depsMap) return;
+  // 取出与key相关的副作用函数
   const effects = depsMap.get(key);
   const effectsToRun = new Set();
+  // 将与key相关联的副作用函数添加到effectsToRun中
   effects &&
     effects.forEach((effectFn) => {
       //! 如果effectFn和和当前的activeEffect是同一个，则不需要重复执行
@@ -96,6 +84,20 @@ function trigger(target, key) {
         effectsToRun.add(effectFn);
       }
     });
+  // 只有当操作类型是ADD时，才能与ITERATE_KEY关联的触发副作用函数
+  if (type === "ADD" || type === "DELETE") {
+    //! 取出与ITERATE_KEY相关联的副作用函数
+    const iterateEffects = depsMap.get(ITERATE_KEY);
+    // 将与ITERATE_KEY相关联的副作用函数添加到effectsToRun中
+    iterateEffects &&
+      iterateEffects.forEach((effectFn) => {
+        //! 如果effectFn和和当前的activeEffect是同一个，则不需要重复执行
+        if (effectFn !== activeEffect) {
+          effectsToRun.add(effectFn);
+        }
+      });
+  }
+
   // ? 如果存在调度器，则调用该调度器，并将副作用函数作为参数传递
   // todo 调度器的思想很重要，需要深入研究，可以将副作用函数的控制权交给用户
   effectsToRun.forEach((effectFn) => {
@@ -106,23 +108,67 @@ function trigger(target, key) {
     }
   });
 }
-// ? 实现代理
-const obj = new Proxy(data, {
-  get(target, key,receiver) {
-    console.log(receiver);
-    track(target, key);
-    return Reflect.get(target, key, receiver);
-  },
-  has(target, key){
-    track(target, key);
-    console.log(target, key);
-    return Reflect.has(target, key);
-  },
-  set(target, key, newValue) {
-    target[key] = newValue;
-    trigger(target, key);
-  },
-});
+// ?for...in 便利的key
+const ITERATE_KEY = Symbol("KEY");
+
+/*******
+ * @description: 实现代理
+ * @param {Object} target 被代理的数据
+ * @return {Proxy} Proxy 代理数据
+ */
+function reactive(target) {
+  return new Proxy(target, {
+    get(target, key, receiver) {
+      // console.log(receiver);
+      // ! 代理对象可以通过raw属性访问原始数据
+      if (key === "raw") {
+        return target;
+      }
+      track(target, key);
+      return Reflect.get(target, key, receiver);
+    },
+    set(target, key, newValue, receiver) {
+      const oldValue = Reflect.get(target, key, receiver);
+      // ! 判断操作是新加属性还是修改属性
+      const type = Object.prototype.hasOwnProperty.call(target, key)
+        ? "SET"
+        : "ADD";
+      const res = Reflect.set(target, key, newValue, receiver);
+      // ! 如果receiver是target的代理对象，则执行
+      // ? 解决对象访问原型引起不必要的更新，只有在访问代理对象才触发，访问原型不触发
+      if (target === receiver.raw) {
+        if (
+          oldValue !== newValue &&
+          (oldValue === oldValue || newValue === newValue)
+        ) {
+          trigger(target, key, type);
+        }
+      }
+      return res;
+    },
+    // ! 拦截关键字'in'
+    has(target, key) {
+      track(target, key);
+      console.log(target, key);
+      return Reflect.has(target, key);
+    },
+    // ! 拦截for ... in
+    ownKeys(target) {
+      track(target, ITERATE_KEY);
+      return Reflect.ownKeys(target);
+    },
+    // !拦截delete
+    deleteProperty(target, key) {
+      const hadKey = Object.prototype.hasOwnProperty.call(target, key);
+      const res = Reflect.deleteProperty(target, key);
+      if (res && hadKey) {
+        trigger(target, key, "DELETE");
+      }
+      return res;
+    },
+  });
+}
+
 /**
  * @description: 执行副作用函数前先清除收集的副作用函数
  * @param {Function} effectFn  包装副作用函数的函数
@@ -166,9 +212,31 @@ function effect(fn, options = {}) {
   }
   return effectFn;
 }
+// todo 测试关键字‘in’
+// effect(() => {
+//   console.log("foo" in obj);
+// });
 
+// obj.foo++;
+// todo 测试for...in
+// effect(() => {
+//   console.log(8, obj.foo);
+// });
+// obj.bar = 3;
+// obj.foo =10
+// obj.aa =1
+// delete obj.foo;
+// todo 测试reactive
+const obj = {};
+const proto = {
+  foo: 1,
+  bar: 2,
+};
+const child = reactive(obj);
+const parent = reactive(proto);
+Object.setPrototypeOf(child, parent);
 effect(() => {
-  console.log('foo' in obj);
-})
-
-obj.foo++
+  console.log(child.foo);
+});
+child.foo = 3;
+console.log(child.raw === obj);
