@@ -1,7 +1,7 @@
 /*
  * @Author: 王东旭
  * @Date: 2022-04-17 22:17:28
- * @LastEditTime: 2022-04-17 22:32:13
+ * @LastEditTime: 2022-04-17 22:40:43
  * @LastEditors: 王东旭
  * @Description:
  * @FilePath: \function-realization-of-vue3\src\reactive\5.5浅响应和深响应.js
@@ -179,17 +179,17 @@ function createReactive(target,isShallow = false) {
   });
 }
 /******* 
- * @description: 
- * @param {*}
- * @return {*}
+ * @description: 深响应实现
+ * @param {Object} target 代理对象
+ * @return {Function} createReactive
  */
 function reactive(target) {
     return createReactive(target);
 }
 /******* 
- * @description: 
- * @param {*}
- * @return {*}
+ * @description: 浅响应实现
+ * @param {Object} target 代理对象
+ * @return {Function} createReactive
  */
 function shallowReactive(target) {
     return createReactive(target, true);
