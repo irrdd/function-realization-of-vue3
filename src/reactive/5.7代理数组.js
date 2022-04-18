@@ -1,7 +1,7 @@
 /*
  * @Author: 王东旭
  * @Date: 2022-04-17 22:56:54
- * @LastEditTime: 2022-04-17 23:37:34
+ * @LastEditTime: 2022-04-18 21:46:26
  * @LastEditors: 王东旭
  * @Description:
  * @FilePath: \function-realization-of-vue3\src\reactive\5.7代理数组.js
@@ -44,6 +44,42 @@ const bucket = new WeakMap();
 let activeEffect;
 // effect 栈
 const effectStack = [];
+// 储存数组原型上方法
+// !储存重写数组的方法
+const arrayInstrumentations = resetArrayMethod();
+// !解决push方法在两个独立副作用函数中使用栈溢出的问题
+// ? 一个标记变量，代表是否进行追踪
+let shouldTrack = true;
+/*******
+ * @description: 重写数组上的方法
+ * @return {*}
+ */
+function resetArrayMethod() {
+  const arrayInstrumentations = {};
+  let originMethod;
+  ["includes", "indexOf", "lastIndexOf"].forEach((method) => {
+    originMethod = Array.prototype[method];
+    arrayInstrumentations[method] = function (...args) {
+      // ! this是代理对象，现在代理对象上查找
+      let res = originMethod.apply(this, args);
+      // 找不到就通过this.raw到原始数组上查找
+      if (!res) {
+        res = originMethod.apply(this.raw, args);
+      }
+      return res;
+    };
+  });
+  ["push", "pop", "shift", "unshift", "splice"].forEach((method) => {
+    originMethod = Array.prototype[method];
+    arrayInstrumentations[method] = function (...args) {
+      shouldTrack = false;
+      let res = originMethod.apply(this, args);
+      shouldTrack = true;
+      return res;
+    };
+  });
+  return arrayInstrumentations;
+}
 /*******
  * @description: 在get拦截函数内调用此函数追踪变化
  * @param {*} target 被代理的对象
@@ -52,7 +88,7 @@ const effectStack = [];
  */
 function track(target, key) {
   // ! 如果没有副作用函数的化，则不需要追踪
-  if (!activeEffect) return;
+  if (!activeEffect || !shouldTrack) return;
   let depsMap = bucket.get(target);
 
   if (!depsMap) bucket.set(target, (depsMap = new Map()));
@@ -135,7 +171,6 @@ function trigger(target, key, type, newValue) {
 }
 // ?for...in 便利的key
 const ITERATE_KEY = Symbol("KEY");
-
 /*******
  * @description: 实现代理
  * @param {Object} target 被代理的数据
@@ -150,8 +185,12 @@ function createReactive(target, isShallow = false, isReadonly = false) {
       if (key === "raw") {
         return target;
       }
+      if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
+        return Reflect.get(arrayInstrumentations, key, receiver);
+      }
       // 判断是否只读
-      if (!isReadonly) {
+      // !禁止副作用函数与Symbol.iterator相关联n
+      if (!isReadonly && typeof key !== "symbol") {
         track(target, key);
       }
       const res = Reflect.get(target, key, receiver);
@@ -198,12 +237,11 @@ function createReactive(target, isShallow = false, isReadonly = false) {
     // ! 拦截关键字'in'
     has(target, key) {
       track(target, key);
-      console.log(target, key);
       return Reflect.has(target, key);
     },
     // ! 拦截for ... in
     ownKeys(target) {
-      track(target, ITERATE_KEY);
+      track(target, Array.isArray(target) ? "length" : ITERATE_KEY);
       return Reflect.ownKeys(target);
     },
     // !拦截delete
@@ -222,13 +260,21 @@ function createReactive(target, isShallow = false, isReadonly = false) {
     },
   });
 }
+
+const reactiveMap = new Map();
 /*******
  * @description: 深响应实现
  * @param {Object} target 代理对象
  * @return {Function} createReactive
  */
 function reactive(target) {
-  return createReactive(target);
+  const existionProxy = reactiveMap.get(target);
+  if (existionProxy) {
+    return existionProxy;
+  }
+  const proxy = createReactive(target);
+  reactiveMap.set(target, proxy);
+  return proxy;
 }
 /*******
  * @description: 浅响应实现
@@ -299,9 +345,34 @@ function effect(fn, options = {}) {
 }
 
 // todo 数组的索引与length
-const arr = reactive([1,2,3,4,5,6]);
-effect(() => {
-  console.log(arr.length, arr[0], arr[1],arr[2],arr[3],arr[4],arr[5]);
-});
+// const arr = reactive([1, 2, 3, 4, 5, 6]);
+// effect(() => {
+//   console.log(arr.length, arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
+// });
 // arr[1] = "bar";
-arr.length = 3;
+// arr.length = 3;
+// todo 数组for in
+// const arr = reactive([1]);
+// effect(() => {
+//   console.log("执行 for in");
+//   for (const key in arr) {
+//     console.log(key);
+//   }
+// });
+// arr[1] = 2;
+// arr.length = 0;
+// todo 数组 includes
+// const obj = {};
+// const arr = reactive([obj]);
+// console.log(arr.indexOf(obj));
+// todo 隐式修改数组长度
+const arr = reactive([]);
+effect(() => {
+  console.log("执行数组长度");
+  arr.push(1);
+});
+
+effect(() => {
+  console.log("执行数组长度2");
+  arr.push(1);
+});
