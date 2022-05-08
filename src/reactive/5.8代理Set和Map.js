@@ -1,28 +1,10 @@
 /*
  * @Author: 王东旭
  * @Date: 2022-04-17 22:56:54
- * @LastEditTime: 2022-05-08 17:48:23
+ * @LastEditTime: 2022-05-08 17:57:23
  * @LastEditors: 王东旭
  * @Description:
  * @FilePath: \function-realization-of-vue3\src\reactive\5.8代理Set和Map.js
- * @
- */
-/*
- * @Author: 王东旭
- * @Date: 2022-05-03 15:33:42
- * @LastEditTime: 2022-05-03 15:33:43
- * @LastEditors: 王东旭
- * @Description:
- * @FilePath: \function-realization-of-vue3\src\reactive\5.7代理数组 copy.js
- * @
- */
-/*
- * @Author: 王东旭
- * @Date: 2022-04-17 22:56:54
- * @LastEditTime: 2022-04-18 21:46:26
- * @LastEditors: 王东旭
- * @Description:
- * @FilePath: \function-realization-of-vue3\src\reactive\5.7代理数组.js
  * @
  */
 // ?直接用Set作为桶的数据结构，则没有副作用函数与被操作的目标字段之间建立明确的联系，导致不相干的字段改变也会触发副作用函数
@@ -209,184 +191,94 @@ const MAP_KEY_ITERATE_KEY = Symbol("mapKey");
  * @param {Boolean} isShallow 是否为浅响应，默认为false，即非浅响应
  * @return {Proxy} Proxy 代理数据
  */
-//  function createReactive(target, isShallow = false, isReadonly = false) {
-//    return new Proxy(target, {
-//      get(target, key, receiver) {
-//        // console.log(receiver);
-//        // ! 代理对象可以通过raw属性访问原始数据
-//        if (key === "raw") {
-//          return target;
-//        }
-//        if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
-//          return Reflect.get(arrayInstrumentations, key, receiver);
-//        }
-//        // 判断是否只读
-//        // !禁止副作用函数与Symbol.iterator相关联n
-//        if (!isReadonly && typeof key !== "symbol") {
-//          track(target, key);
-//        }
-//        const res = Reflect.get(target, key, receiver);
-//        if (isShallow) {
-//          return res;
-//        }
-//        // ! 如果是对象，则递归代理
-//        if (typeof res === "object" && res !== null) {
-//          // ? 调用reactive方法，将结果包装成Proxy返回
-//          // ! 如果数据是只读，则调用readonly对值进行包装
-//          return isReadonly ? readonly(res) : reactive(res);
-//        }
-//        return res;
-//      },
-//      set(target, key, newValue, receiver) {
-//        // ! 如果是只读的，则打印警告信息并返回
-//        if (isReadonly) {
-//          console.warn(`${key} is readonly`);
-//          return true;
-//        }
-//        const oldValue = Reflect.get(target, key, receiver);
-//        // ! 判断操作是新加属性还是修改属性
-//        const type = Array.isArray(target)
-//          ? // ?如果代理对象是数组，则检测被设置的索引值是否小于数组长度
-//            Number(key) < target.length
-//            ? "SET"
-//            : "ADD"
-//          : Object.prototype.hasOwnProperty.call(target, key)
-//          ? "SET"
-//          : "ADD";
-//        const res = Reflect.set(target, key, newValue, receiver);
-//        // ! 如果receiver是target的代理对象，则执行
-//        // ? 解决对象访问原型引起不必要的更新，只有在访问代理对象才触发，访问原型不触发
-//        if (target === receiver.raw) {
-//          if (
-//            oldValue !== newValue &&
-//            (oldValue === oldValue || newValue === newValue)
-//          ) {
-//            trigger(target, key, type, newValue);
-//          }
-//        }
-//        return res;
-//      },
-//      // ! 拦截关键字'in'
-//      has(target, key) {
-//        track(target, key);
-//        return Reflect.has(target, key);
-//      },
-//      // ! 拦截for ... in
-//      ownKeys(target) {
-//        track(target, Array.isArray(target) ? "length" : ITERATE_KEY);
-//        return Reflect.ownKeys(target);
-//      },
-//      // !拦截delete
-//      deleteProperty(target, key) {
-//        // ! 如果是只读的，则打印警告信息并返回
-//        if (isReadonly) {
-//          console.warn(`${key} is readonly`);
-//          return true;
-//        }
-//        const hadKey = Object.prototype.hasOwnProperty.call(target, key);
-//        const res = Reflect.deleteProperty(target, key);
-//        if (res && hadKey) {
-//          trigger(target, key, "DELETE");
-//        }
-//        return res;
-//      },
-//    });
-//  }
-
-const reactiveMap = new Map();
-/*******
- * @description: 深响应实现
- * @param {Object} target 代理对象
- * @return {Function} createReactive
- */
-function reactive(target) {
-  const existionProxy = reactiveMap.get(target);
-  if (existionProxy) {
-    return existionProxy;
-  }
-  const proxy = createReactive(target);
-  reactiveMap.set(target, proxy);
-  return proxy;
-}
-/*******
- * @description: 浅响应实现
- * @param {Object} target 代理对象
- * @return {Function} createReactive
- */
-function shallowReactive(target) {
-  return createReactive(target, true);
-}
-/*******
- * @description: 深只读实现
- * @param {Object} target 代理对象
- * @return {Function} createReactive
- */
-function readonly(target) {
-  return createReactive(target, false, true);
-}
-/*******
- * @description: 浅只读实现
- * @param {Object} target 代理对象
- * @return {Function} createReactive
- */
-function shallowReadonly(target) {
-  return createReactive(target, true, true);
-}
-/**
- * @description: 执行副作用函数前先清除收集的副作用函数
- * @param {Function} effectFn  包装副作用函数的函数
- * @return null
- */
-function cleanup(effectFn) {
-  for (let index = 0; index < effectFn.deps.length; index++) {
-    const deps = effectFn.deps[index];
-    deps.delete(effectFn);
-  }
-  effectFn.deps.length = 0;
-}
-
-/**
- * @description: 注册副作用函数
- * @param {Function} fn 副作用函数
- * @param {Object} options 用于允许用户指定调度器
- * @return null
- */
-function effect(fn, options = {}) {
-  const effectFn = () => {
-    cleanup(effectFn);
-    activeEffect = effectFn;
-    // 将当前的effectFn放入effectStack栈中，防止执行fn时将activeEffect改变
-    effectStack.push(effectFn);
-    // 将fn执行的结果保存在res中
-    const res = fn();
-    // 执行后将effectFn从effectStack栈中移除
-    effectStack.pop();
-    // 将activeEffect指向下一个要执行的副作用函数
-    activeEffect = effectStack[effectStack.length - 1];
-    return res;
-  };
-  // ! 将options挂载到对应的副作用函数上
-  effectFn.options = options;
-  // 加入依赖容器
-  effectFn.deps = [];
-  //  只有在非lazy的情况下才会调用
-  if (!options.lazy) {
-    effectFn();
-  }
-  return effectFn;
-}
-
 function createReactive(target, isShallow = false, isReadonly = false) {
   return new Proxy(target, {
     get(target, key, receiver) {
+      // console.log(receiver);
+      // ! 代理对象可以通过raw属性访问原始数据
       if (key === "raw") {
         return target;
       }
-      if (key === "size") {
-        track(target, ITERATE_KEY);
-        return Reflect.get(target, key, target);
+      if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
+        return Reflect.get(arrayInstrumentations, key, receiver);
       }
-      return mutableInstrumentations[key];
+      // 判断是否只读
+      // !禁止副作用函数与Symbol.iterator相关联n
+      if (!isReadonly && typeof key !== "symbol") {
+        track(target, key);
+      }
+      const res = Reflect.get(target, key, receiver);
+      if (isShallow) {
+        return res;
+      }
+      // ! 如果原始对象是map或set
+      if (target instanceof Map || target instanceof Set) {
+        if (key === "size") {
+          track(target, ITERATE_KEY);
+          return Reflect.get(target, key, target);
+        }
+        return mutableInstrumentations[key];
+      }
+      // ! 如果是对象，则递归代理
+      if (typeof res === "object" && res !== null) {
+        // ? 调用reactive方法，将结果包装成Proxy返回
+        // ! 如果数据是只读，则调用readonly对值进行包装
+        return isReadonly ? readonly(res) : reactive(res);
+      }
+      return res;
+    },
+    set(target, key, newValue, receiver) {
+      // ! 如果是只读的，则打印警告信息并返回
+      if (isReadonly) {
+        console.warn(`${key} is readonly`);
+        return true;
+      }
+      const oldValue = Reflect.get(target, key, receiver);
+      // ! 判断操作是新加属性还是修改属性
+      const type = Array.isArray(target)
+        ? // ?如果代理对象是数组，则检测被设置的索引值是否小于数组长度
+          Number(key) < target.length
+          ? "SET"
+          : "ADD"
+        : Object.prototype.hasOwnProperty.call(target, key)
+        ? "SET"
+        : "ADD";
+      const res = Reflect.set(target, key, newValue, receiver);
+      // ! 如果receiver是target的代理对象，则执行
+      // ? 解决对象访问原型引起不必要的更新，只有在访问代理对象才触发，访问原型不触发
+      if (target === receiver.raw) {
+        if (
+          oldValue !== newValue &&
+          (oldValue === oldValue || newValue === newValue)
+        ) {
+          trigger(target, key, type, newValue);
+        }
+      }
+      return res;
+    },
+    // ! 拦截关键字'in'
+    has(target, key) {
+      track(target, key);
+      return Reflect.has(target, key);
+    },
+    // ! 拦截for ... in
+    ownKeys(target) {
+      track(target, Array.isArray(target) ? "length" : ITERATE_KEY);
+      return Reflect.ownKeys(target);
+    },
+    // !拦截delete
+    deleteProperty(target, key) {
+      // ! 如果是只读的，则打印警告信息并返回
+      if (isReadonly) {
+        console.warn(`${key} is readonly`);
+        return true;
+      }
+      const hadKey = Object.prototype.hasOwnProperty.call(target, key);
+      const res = Reflect.deleteProperty(target, key);
+      if (res && hadKey) {
+        trigger(target, key, "DELETE");
+      }
+      return res;
     },
   });
 }
@@ -502,6 +394,88 @@ function keysIterationMethod() {
     },
   };
 }
+const reactiveMap = new Map();
+/*******
+ * @description: 深响应实现
+ * @param {Object} target 代理对象
+ * @return {Function} createReactive
+ */
+function reactive(target) {
+  const existionProxy = reactiveMap.get(target);
+  if (existionProxy) {
+    return existionProxy;
+  }
+  const proxy = createReactive(target);
+  reactiveMap.set(target, proxy);
+  return proxy;
+}
+/*******
+ * @description: 浅响应实现
+ * @param {Object} target 代理对象
+ * @return {Function} createReactive
+ */
+function shallowReactive(target) {
+  return createReactive(target, true);
+}
+/*******
+ * @description: 深只读实现
+ * @param {Object} target 代理对象
+ * @return {Function} createReactive
+ */
+function readonly(target) {
+  return createReactive(target, false, true);
+}
+/*******
+ * @description: 浅只读实现
+ * @param {Object} target 代理对象
+ * @return {Function} createReactive
+ */
+function shallowReadonly(target) {
+  return createReactive(target, true, true);
+}
+/**
+ * @description: 执行副作用函数前先清除收集的副作用函数
+ * @param {Function} effectFn  包装副作用函数的函数
+ * @return null
+ */
+function cleanup(effectFn) {
+  for (let index = 0; index < effectFn.deps.length; index++) {
+    const deps = effectFn.deps[index];
+    deps.delete(effectFn);
+  }
+  effectFn.deps.length = 0;
+}
+
+/**
+ * @description: 注册副作用函数
+ * @param {Function} fn 副作用函数
+ * @param {Object} options 用于允许用户指定调度器
+ * @return null
+ */
+function effect(fn, options = {}) {
+  const effectFn = () => {
+    cleanup(effectFn);
+    activeEffect = effectFn;
+    // 将当前的effectFn放入effectStack栈中，防止执行fn时将activeEffect改变
+    effectStack.push(effectFn);
+    // 将fn执行的结果保存在res中
+    const res = fn();
+    // 执行后将effectFn从effectStack栈中移除
+    effectStack.pop();
+    // 将activeEffect指向下一个要执行的副作用函数
+    activeEffect = effectStack[effectStack.length - 1];
+    return res;
+  };
+  // ! 将options挂载到对应的副作用函数上
+  effectFn.options = options;
+  // 加入依赖容器
+  effectFn.deps = [];
+  //  只有在非lazy的情况下才会调用
+  if (!options.lazy) {
+    effectFn();
+  }
+  return effectFn;
+}
 
 // todo 实现map的forEach方法
 // const p = reactive(new Map([
@@ -555,15 +529,15 @@ const p = reactive(
     ["key2", 2],
   ])
 );
-// effect(() => {
-//   for (const [key, value] of p.entries()) {
-//     console.log(key, value);
-//   }
-// });
 effect(() => {
-  for (const value of p.keys()) {
-    console.log(value);
+  for (const [key, value] of p.entries()) {
+    console.log(key, value);
   }
 });
+// effect(() => {
+//   for (const value of p.keys()) {
+//     console.log(value);
+//   }
+// });
 p.set("key2", 3);
 p.set("key3", 3);
