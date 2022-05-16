@@ -1,7 +1,7 @@
 /*
  * @Author: 王东旭
  * @Date: 2022-05-09 15:48:02
- * @LastEditTime: 2022-05-14 22:35:26
+ * @LastEditTime: 2022-05-15 12:22:01
  * @LastEditors: 王东旭
  * @Description:
  * @FilePath: \function-realization-of-vue3\src\renderer\7.1渲染器与响应系统结合.js
@@ -22,7 +22,7 @@ function createRenderer(options) {
     setText,
     createText,
     createComment,
-    unmount,
+    unmount: unmountElement,
   } = options;
   /*******
    * @description: 匹配虚拟节点类型，选择对应的渲染器
@@ -191,6 +191,15 @@ function createRenderer(options) {
     }
     return key in el;
   }
+  function unmount(vnode){
+    if (vnode.type === Fragment) {
+      vnode.children.forEach( child=> {
+        unmount(child);
+      });
+      return;
+    }
+    unmountElement(vnode);
+  }
   return { render, shouldSetAsProps };
 }
 
@@ -306,10 +315,6 @@ const { render, shouldSetAsProps } = createRenderer({
    * @return {null}
    */
   unmount(vnode) {
-    if (vnode.type === Fragment) {
-      vnode.children.forEach((child) => unmount(child));
-      return;
-    }
     const parent = vnode.el.parentNode;
     parent && parent.removeChild(vnode.el);
   },
@@ -357,7 +362,28 @@ const frag = {
     },
   ],
 };
+const newFrag = {
+  type: "ul",
+  children: [
+    {
+      type: Fragment,
+      children: [
+        {
+          type: "li",
+          children: "4",
+        },
+        {
+          type: "li",
+          children: "5",
+        },
+        {
+          type: "li",
+          children: "6",
+        },
+      ],
+    },
+  ],
+};
 let node = document.querySelector("#app");
-render(oldVnode, node);
-render(newVnode, node);
 render(frag, node);
+render(newFrag, node);
