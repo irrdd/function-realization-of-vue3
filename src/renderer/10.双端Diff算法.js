@@ -1,11 +1,11 @@
 /*
  * @Author: 王东旭
  * @Date: 2022-05-21 22:55:52
- * @LastEditTime: 2022-05-21 22:56:22
+ * @LastEditTime: 2022-05-24 23:10:40
  * @LastEditors: 王东旭
- * @Description: 
+ * @Description:
  * @FilePath: \function-realization-of-vue3\src\renderer\10.双端Diff算法.js
- * @ 
+ * @
  */
 
 /*******
@@ -32,7 +32,7 @@ function createRenderer(options) {
    * @param {node} anchor 锚点元素
    * @return {null} null
    */
-  function patch(n1, n2, container,anchor) {
+  function patch(n1, n2, container, anchor) {
     //! 如果新旧节点类型不一致，则直接卸载旧节点
     if (n1 && n1.type !== n2.type) {
       unmount(n1);
@@ -42,7 +42,7 @@ function createRenderer(options) {
     if (typeof type === "string") {
       //   !如果n1不存在，则意味着挂载
       if (!n1) {
-        mountElement(n2, container,anchor);
+        mountElement(n2, container, anchor);
       } else {
         patchElement(n1, n2);
       }
@@ -105,7 +105,7 @@ function createRenderer(options) {
    * @param {node} anchor 锚点元素
    * @return {*}
    */
-  function mountElement(vnode, container,anchor) {
+  function mountElement(vnode, container, anchor) {
     const el = createElement(vnode.type);
     vnode.el = el;
     if (typeof vnode.children === "string") {
@@ -121,7 +121,7 @@ function createRenderer(options) {
         patchProps(el, key, null, value);
       }
     }
-    insert(el, container,anchor);
+    insert(el, container, anchor);
   }
   /*******
    * @description: dom节点更新
@@ -160,60 +160,7 @@ function createRenderer(options) {
       setElementText(container, n2.children);
     } else if (Array.isArray(n2.children)) {
       if (Array.isArray(n1.children)) {
-        const oldChildren = n1.children;
-        const newChildren = n2.children;
-        // !用来储存寻找过程中遇到的最大索引
-        let lastIndex = 0;
-        for (let index = 0; index < newChildren.length; index++) {
-          const newVnode = newChildren[index];
-          // !是否在旧的一组子节点中找到了可复用的节点
-          let find = false
-          for (let j = 0; j < oldChildren.length; j++) {
-            const oldVnode = oldChildren[j];
-            if (newVnode.key === oldVnode.key) {
-              find = true;
-              patch(oldVnode, newVnode, container);
-              // !如果当前节点在旧children中的索引小于最大索引，说明该节点对于的真实dom需要移动
-              if (j < lastIndex) {
-                // !先获取newVNode的前一个node，即preVNode
-                const preVnode = newChildren[index - 1];
-                if (preVnode) {
-                  // ?获取preVNode所在的真实dom节点的下一个兄弟节点，并将其作为锚点
-                  const anchor = preVnode.el.nextSibling;
-                  // ?将newVNode的真实dom节点插入到anchor之前
-                  insert(newVnode.el, container, anchor);
-                }
-              } else {
-                // ?如果当前节点在旧children中的索引不小于最大索引，则更新lastIndex
-                lastIndex = j;
-              }
-              break;
-            }
-          }
-          // !在旧的一组子节点中没有找到可复用的节点
-          // ?也就是说当前newVNode是新增节点，需要挂载
-          if (!find) {
-            const preVNode = newChildren[index - 1];
-            let anchor = null
-            if (preVNode) {
-            //* 如果preVNode存在，则使用它的下一个兄弟节点作为锚点元素
-              anchor = preVNode.el.nextSibling;
-            }else{
-              //* 如果preVNode不存在，说明即将挂载的新节点是第一个节点，则使用容器的第一个元素作为锚点元素
-              anchor = container.firstChild;
-            }
-            // 挂载newVNode
-            patch(null, newVnode, container, anchor);
-          }
-        }
-        // !遍历旧节点，如果旧节点上存在要卸载的元素，则卸载
-        for (let index = 0; index < oldChildren.length; index++) {
-          const oldVnode = oldChildren[index];
-          const has = newChildren.find(vnode=>vnode.key === oldVnode.key);
-          if (!has) {
-            unmount(oldVnode);
-          }
-        }
+        pathKeyedChildren(n1, n2, container);
       } else {
         setElementText(container, "");
         n2.children.forEach((child) => {
@@ -226,6 +173,67 @@ function createRenderer(options) {
         n1.children.forEach((child) => unmount(child));
       } else if (typeof n1.children === "string") {
         setElementText(container, "");
+      }
+    }
+  }
+  /*******
+   * @description: 双端diff处理
+   * @param {vnode} n1 旧的vnode
+   * @param {vnode} n2 新的vnode
+   * @param {node} container 容器
+   * @return {*}
+   */
+  function pathKeyedChildren(n1, n2, container) {
+    const oldChildren = n1.children;
+    const newChildren = n2.children;
+    // 四个索引值
+    let oldStartIndex = 0;
+    let newStartIndex = 0;
+    let oldEndIndex = oldChildren.length - 1;
+    let newEndIndex = newChildren.length - 1;
+    // 四个索引指向的虚拟节点
+    let oldStartVnode = oldChildren[oldStartIndex];
+    let oldEndVnode = oldChildren[oldEndIndex];
+    let newStartVnode = newChildren[newStartIndex];
+    let newEndVnode = newChildren[newEndIndex];
+    while (oldStartIndex <= oldEndIndex && newStartIndex <= newEndIndex) {
+      if(!oldStartVnode){
+        oldStartVnode = oldChildren[++oldStartIndex];
+      }else if(!oldEndVnode){
+        oldEndVnode = oldChildren[--oldEndIndex];
+      }else if (oldStartVnode.key === newStartVnode.key) {
+        patch(oldStartVnode,newStartVnode,container)
+        oldStartVnode = oldChildren[++oldStartIndex]
+        newStartVnode = newChildren[++newStartIndex];
+      } else if (oldEndVnode.key === newEndVnode.key) {
+        patch(oldEndVnode, newEndVnode, container);
+        oldEndVnode = oldChildren[--oldEndIndex];
+        newEndVnode = newChildren[--newEndIndex];
+      } else if (oldStartVnode.key === newEndVnode.key) {
+        patch(oldStartVnode,newEndVnode,container)
+        insert(oldStartVnode.el,container,oldEndVnode.el.nextSibling)
+        oldStartVnode = oldChildren[++oldStartIndex]
+        newEndVnode = newChildren[--newEndIndex]
+      } else if (oldEndVnode.key === newStartVnode.key) {
+        // 调用patch打补丁
+        patch(oldEndVnode, newStartVnode, container);
+        // 将oldEndVnode.el移动到newStartVnode.el之前
+        insert(oldEndVnode.el, container, oldStartVnode.el);
+        // 移动完dom后，更新索引
+        oldEndVnode = oldChildren[--oldEndIndex];
+        newStartVnode = newChildren[++newStartIndex];
+      } else {
+        // 遍历旧的子节点，试图寻找与newStartVnode相同的key值的节点
+        const idxInOld = oldChildren.findIndex(node=>node.key === newStartVnode.key)
+        if (idxInOld>0) {
+          const vnodeToMove = oldChildren[idxInOld]
+          patch(vnodeToMove,newStartVnode,container)
+          // 将vnodeToMove.el移动到newStartVnode.el之前
+          insert(vnodeToMove.el, container, oldStartVnode.el);
+          // 移动完dom后，更新索引
+          oldChildren[idxInOld] = undefined
+          newStartVnode = newChildren[++newStartIndex];
+        }
       }
     }
   }
@@ -392,7 +400,7 @@ const frag = {
     {
       type: "li",
       children: "1",
-      key: "3",
+      key: "1",
     },
     {
       type: "li",
@@ -402,7 +410,12 @@ const frag = {
     {
       type: "li",
       children: "3",
-      key: "1",
+      key: "3",
+    },
+    {
+      type: "li",
+      children: "4",
+      key: "4",
     },
   ],
 };
@@ -411,22 +424,26 @@ const newFrag = {
   children: [
     {
       type: "li",
-      children: "10",
+      children: "22",
+      key: "2",
+    },
+    {
+      type: "li",
+      children: "44",
       key: "4",
     },
 
     {
       type: "li",
-      children: "5",
-      key: "2",
+      children: "11",
+      key: "1",
     },
 
     {
       type: "li",
-      children: "6",
+      children: "33",
       key: "3",
     },
-   
   ],
 };
 let node = document.querySelector("#app");
