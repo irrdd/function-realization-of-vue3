@@ -1,7 +1,7 @@
 /*
  * @Author: 王东旭
  * @Date: 2022-05-21 22:55:52
- * @LastEditTime: 2022-05-24 23:10:40
+ * @LastEditTime: 2022-05-25 20:53:11
  * @LastEditors: 王东旭
  * @Description:
  * @FilePath: \function-realization-of-vue3\src\renderer\10.双端Diff算法.js
@@ -197,23 +197,23 @@ function createRenderer(options) {
     let newStartVnode = newChildren[newStartIndex];
     let newEndVnode = newChildren[newEndIndex];
     while (oldStartIndex <= oldEndIndex && newStartIndex <= newEndIndex) {
-      if(!oldStartVnode){
+      if (!oldStartVnode) {
         oldStartVnode = oldChildren[++oldStartIndex];
-      }else if(!oldEndVnode){
+      } else if (!oldEndVnode) {
         oldEndVnode = oldChildren[--oldEndIndex];
-      }else if (oldStartVnode.key === newStartVnode.key) {
-        patch(oldStartVnode,newStartVnode,container)
-        oldStartVnode = oldChildren[++oldStartIndex]
+      } else if (oldStartVnode.key === newStartVnode.key) {
+        patch(oldStartVnode, newStartVnode, container);
+        oldStartVnode = oldChildren[++oldStartIndex];
         newStartVnode = newChildren[++newStartIndex];
       } else if (oldEndVnode.key === newEndVnode.key) {
         patch(oldEndVnode, newEndVnode, container);
         oldEndVnode = oldChildren[--oldEndIndex];
         newEndVnode = newChildren[--newEndIndex];
       } else if (oldStartVnode.key === newEndVnode.key) {
-        patch(oldStartVnode,newEndVnode,container)
-        insert(oldStartVnode.el,container,oldEndVnode.el.nextSibling)
-        oldStartVnode = oldChildren[++oldStartIndex]
-        newEndVnode = newChildren[--newEndIndex]
+        patch(oldStartVnode, newEndVnode, container);
+        insert(oldStartVnode.el, container, oldEndVnode.el.nextSibling);
+        oldStartVnode = oldChildren[++oldStartIndex];
+        newEndVnode = newChildren[--newEndIndex];
       } else if (oldEndVnode.key === newStartVnode.key) {
         // 调用patch打补丁
         patch(oldEndVnode, newStartVnode, container);
@@ -224,15 +224,31 @@ function createRenderer(options) {
         newStartVnode = newChildren[++newStartIndex];
       } else {
         // 遍历旧的子节点，试图寻找与newStartVnode相同的key值的节点
-        const idxInOld = oldChildren.findIndex(node=>node.key === newStartVnode.key)
-        if (idxInOld>0) {
-          const vnodeToMove = oldChildren[idxInOld]
-          patch(vnodeToMove,newStartVnode,container)
+        const idxInOld = oldChildren.findIndex(
+          (node) => node.key === newStartVnode.key
+        );
+        if (idxInOld > 0) {
+          const vnodeToMove = oldChildren[idxInOld];
+          patch(vnodeToMove, newStartVnode, container);
           // 将vnodeToMove.el移动到newStartVnode.el之前
           insert(vnodeToMove.el, container, oldStartVnode.el);
           // 移动完dom后，更新索引
-          oldChildren[idxInOld] = undefined
-          newStartVnode = newChildren[++newStartIndex];
+          oldChildren[idxInOld] = undefined;
+        } else {
+          patch(null, newStartVnode, container, oldStartVnode.el);
+        }
+        newStartVnode = newChildren[++newStartIndex];
+      }
+    }
+    // 循环结束后检查索引值的情况,用于添加新节点
+    if (oldEndIndex < oldStartIndex && newStartIndex <= newEndIndex) {
+      for (let index = newStartIndex; index <= newEndIndex; index++) {
+        patch(null, newChildren[index], container, oldStartIndex.el);
+      }
+    } else if (newEndIndex < newStartIndex && oldStartIndex <= oldEndIndex) {
+      for (let index = oldStartIndex; index <= oldEndIndex; index++) {
+        if (oldChildren[index]) {
+          unmount(oldChildren[index]);
         }
       }
     }
@@ -431,12 +447,6 @@ const newFrag = {
       type: "li",
       children: "44",
       key: "4",
-    },
-
-    {
-      type: "li",
-      children: "11",
-      key: "1",
     },
 
     {
